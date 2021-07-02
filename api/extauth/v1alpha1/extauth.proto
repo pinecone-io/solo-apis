@@ -1,0 +1,557 @@
+syntax = "proto3";
+package extauth.solo.io;
+
+option go_package = "github.com/solo-io/ext-auth-service/pkg/api/extauth.solo.io/v1alpha1/types";
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/empty.proto";
+
+import "extproto/ext.proto";
+
+option (extproto.hash_all) = true;
+option (extproto.equal_all) = true;
+
+message ExtAuthConfigSpec {
+
+    // @solo-kit:resource.name
+    // This is the identifier of the AuthConfig resource that this configuration is associated with.
+    // Any request to the external auth server includes an identifier that is matched against this field to determine
+    // which AuthConfig should be applied to it.
+    string auth_config_ref_name = 1;
+
+    message OidcAuthorizationCodeConfig {
+
+        // your client id as registered with the issuer
+        string client_id = 1;
+
+        // your client secret as registered with the issuer
+        string client_secret = 2 [(extproto.sensitive) = true];
+
+        // The url of the issuer. We will look for OIDC information in issuerUrl+
+        // ".well-known/openid-configuration"
+        string issuer_url = 3;
+
+        // extra query parameters to apply to the Ext-Auth service's authorization request to the identity provider.
+        // this can be useful for flows such as PKCE (https://www.oauth.com/oauth2-servers/pkce/authorization-request/)
+        // to set the `code_challenge` and `code_challenge_method`.
+        map<string, string> auth_endpoint_query_params = 4;
+
+        // extra query parameters to apply to the Ext-Auth service's token request to the identity provider.
+        // this can be useful for flows such as PKCE (https://www.oauth.com/oauth2-servers/pkce/authorization-request/)
+        // to set the `code_verifier`.
+        map<string, string> token_endpoint_query_params = 14;
+
+        // we to redirect after successful auth, if we can't determine the original
+        // url this should be your publicly available app url.
+        string app_url = 5;
+
+        // a callback path relative to app url that will be used for OIDC callbacks.
+        // needs to not be used by the application
+        string callback_path = 6;
+
+        // a path relative to app url that will be used for logging out from an OIDC session.
+        // should not be used by the application.
+        // If not provided, logout functionality will be disabled.
+        string logout_path = 9;
+
+        // url to redirect to after logout.
+        // This should be a publicly available URL. If not provided, will default to the `app_url`.
+        string after_logout_url = 15;
+
+        // scopes to request in addition to the openid scope.
+        repeated string scopes = 7;
+
+        UserSession session = 8;
+
+        // Configures headers added to requests.
+        HeaderConfiguration headers = 10;
+
+        // OIDC configuration is discovered at <issuerUrl>/.well-known/openid-configuration
+        // The configuration override defines any properties that should override this discovery configuration
+        // For example, the following AuthConfig CRD could be defined as:
+        //    ```yaml
+        //    apiVersion: enterprise.gloo.solo.io/v1
+        //    kind: AuthConfig
+        //    metadata:
+        //      name: google-oidc
+        //      namespace: gloo-system
+        //    spec:
+        //      configs:
+        //      - oauth:
+        //          app_url: http://localhost:8080
+        //          callback_path: /callback
+        //          client_id: $CLIENT_ID
+        //          client_secret_ref:
+        //            name: google
+        //            namespace: gloo-system
+        //          issuer_url: https://accounts.google.com
+        //          discovery_override:
+        //            token_endpoint: "https://token.url/gettoken"
+        //    ```
+        //
+        // And this will ensure that regardless of what value is discovered at
+        // <issuerUrl>/.well-known/openid-configuration, "https://token.url/gettoken" will be used as the token endpoint
+        DiscoveryOverride discovery_override = 11;
+
+        // The interval at which OIDC configuration is discovered at <issuerUrl>/.well-known/openid-configuration
+        // If not specified, the default value is 30 minutes.
+        google.protobuf.Duration discovery_poll_interval = 12;
+
+        // If a user executes a request with a key that is not found in the JWKS, it could be
+        // that the keys have rotated on the remote source, and not yet in the local cache.
+        // This policy lets you define the behavior for how to refresh the local cache during a request
+        // where an invalid key is provided
+        JwksOnDemandCacheRefreshPolicy jwks_cache_refresh_policy = 13;
+
+        // in the future we may implement this:
+        // add optional configuration for validation of the access token received during the OIDC flow
+        // AccessTokenValidation access_token_validation = 8;
+
+        // If set, the randomly generated session id will be sent to the token endpoint as part of the code exchange
+        // The session id is used as the key for sessions in Redis
+        string session_id_header_name = 16;
+    }
+
+    message AccessTokenValidationConfig {
+        // Defines how JSON Web Token (JWT) access tokens are validated.
+        //
+        // Tokens are validated using a JSON Web Key Set (as defined in
+        // [Section 5 of RFC7517](https://tools.ietf.org/html/rfc7517#section-5)),
+        // which can be either inlined in the configuration or fetched from a remote location via HTTP.
+        // Any keys in the JWKS that are not intended for signature verification (i.e. whose
+        // ["use" parameter](https://tools.ietf.org/html/rfc7517#section-4.2) is not "sig")
+        // will be ignored by the system, as will keys that do not specify a
+        // ["kid" (Key ID) parameter](https://tools.ietf.org/html/rfc7517#section-4.2).
+        //
+        // The JWT to be validated must define non-empty "kid" and "alg" headers. The "kid" header
+        // determines which key in the JWKS will be used to verify the signature of the token;
+        // if no matching key is found, the token will be rejected.
+        //
+        // If present, the server will verify the "exp", "iat", and "nbf" standard JWT claims.
+        // Validation of the "iss" claim and of token scopes can be configured as well.
+        // If the JWT has been successfully validated, its set of claims will be added to the
+        // `AuthorizationRequest` state under the "jwtAccessToken" key.
+        message JwtValidation {
+
+            // Specifies how to fetch JWKS from remote and how to cache it.
+            message RemoteJwks {
+                // The HTTP URI to fetch the JWKS.
+                string url = 1;
+
+                // The frequency at which the JWKS should be refreshed.
+                // If not specified, the default value is 5 minutes.
+                google.protobuf.Duration refresh_interval = 2;
+            }
+
+            // Represents a locally available JWKS.
+            message LocalJwks {
+                // JWKS is embedded as a string.
+                string inline_string = 1;
+            }
+
+            oneof jwks_source_specifier {
+                // Fetches the JWKS from a remote location.
+                RemoteJwks remote_jwks = 1;
+                // Loads the JWKS from a local data source.
+                LocalJwks local_jwks = 2;
+            }
+
+            // Allow only tokens that have been issued by this principal (i.e. whose "iss" claim matches this value).
+            // If empty, issuer validation will be skipped.
+            string issuer = 3;
+        }
+
+        // Defines how (opaque) access tokens, received from the oauth authorization endpoint, are validated
+        // [OAuth2.0 Token Introspection](https://tools.ietf.org/html/rfc7662)
+        //
+        // If the token introspection url requires client authentication, both the client_id and client_secret
+        // are required. If only one is provided, the config will be rejected.
+        // These values will be encoded in a basic auth header in order to authenticate the client.
+        message IntrospectionValidation {
+            // The URL for the [OAuth2.0 Token Introspection](https://tools.ietf.org/html/rfc7662) endpoint.
+            // If provided, the (opaque) access token provided or received from the oauth authorization endpoint
+            // will be validated against this endpoint, or locally cached responses for this access token.
+            string introspection_url = 1;
+
+            // Your client id as registered with the issuer.
+            // Optional: Use if the token introspection url requires client authentication.
+            string client_id = 2;
+
+            // Your client secret as registered with the issuer.
+            // Optional: Use if the token introspection url requires client authentication.
+            string client_secret = 3 [(extproto.sensitive) = true];
+
+            // The name of the [introspection response](https://tools.ietf.org/html/rfc7662#section-2.2)
+            // attribute that contains the ID of the resource owner (e.g. `sub`, `username`).
+            // If specified, the external auth server will use the value of the attribute as the identifier of the
+            // authenticated user and add it to the request headers and/or dynamic metadata (depending on how the
+            // server is configured); if the field is set and the attribute cannot be found, the request will be denied.
+            // This field is optional and by default the server will not try to derive the user ID.
+            string user_id_attribute_name = 4;
+        }
+
+        oneof validation_type {
+
+            // Validate access tokens that conform to the
+            // [JSON Web Token (JWT)](https://tools.ietf.org/html/rfc7519) specification.
+            JwtValidation jwt = 2;
+
+            // Defines how (opaque) access tokens, received from the oauth authorization endpoint, are validated
+            // [OAuth2.0 Token Introspection](https://tools.ietf.org/html/rfc7662) specification.
+            IntrospectionValidation introspection = 3;
+
+            // In the future we may implement HMAC validation
+        }
+
+        // The URL for the OIDC userinfo endpoint.
+        // If provided, the (opaque) access token provided or received from the oauth endpoint
+        // will be queried and the userinfo response (or cached response) will be added to the
+        // `AuthorizationRequest` state under the "introspection" key.
+        // This can be useful to leverage the userinfo response in, for example, an external auth server plugin.
+        string userinfo_url = 4;
+
+        // How long the token introspection and userinfo endpoint response for a specific access token should be kept
+        // in the in-memory cache. The result will be invalidated at this timeout, or at "exp" time from the introspection
+        // result, whichever comes sooner. If omitted, defaults to 10 minutes. If zero, then no caching will be done.
+        google.protobuf.Duration cache_timeout = 5;
+
+        // Optional criteria for validating the scopes of a token.
+        oneof scope_validation {
+            // Require access token to have all of the scopes in the given list.
+            // This configuration applies to both opaque and JWT tokens. In the case of opaque tokens,
+            // this will check the scopes returned in the "scope" member of introspection response
+            // (as described in [Section 2.2 of RFC7662](https://tools.ietf.org/html/rfc7662#section-2.2).
+            // In case of JWTs the scopes to be validated are expected to be contained in the "scope" claim of the
+            // token in the form of a space-separated string.
+            // Omitting this field means that scope validation will be skipped.
+            ScopeList required_scopes = 6;
+
+            // in the future we may add other types of scope validation (e.g. predicate matching)
+        }
+
+        message ScopeList {
+            repeated string scope = 1;
+        }
+    }
+
+    message OAuth2Config {
+        reserved 2;
+
+        oneof oauth_type {
+            // provide issuer location and let gloo handle OIDC flow for you.
+            // requests authorized by validating the contents of ID token.
+            // can also authorize the access token if configured.
+            OidcAuthorizationCodeConfig oidc_authorization_code = 1;
+
+            // provide the access token on the request and let gloo handle authorization.
+            //
+            // according to https://tools.ietf.org/html/rfc6750 you can pass tokens through:
+            // - form-encoded body parameter. recommended, more likely to appear. e.g.: Authorization: Bearer mytoken123
+            // - URI query parameter e.g. access_token=mytoken123
+            // - and (preferably) secure cookies
+            AccessTokenValidationConfig access_token_validation_config = 3;
+        }
+    }
+
+    // **NOTE: This configuration is not user-facing and will be auto generated**
+    message ApiKeyAuthConfig {
+
+        message KeyMetadata {
+            // The user is mapped as the name of `Secret` which contains the `ApiKeySecret`
+            string username = 1;
+            // The metadata present on the `ApiKeySecret`.
+            map<string, string> metadata = 2;
+        }
+
+        // A mapping of valid API keys to their associated metadata.
+        // This map is automatically populated with the information from the relevant `ApiKeySecret`s.
+        map<string, KeyMetadata> valid_api_keys = 1 [(extproto.sensitive) = true];
+
+        // (Optional) When receiving a request, the Gloo Edge Enterprise external auth server will look for an API key
+        // in a header with this name. This field is optional; if not provided it defaults to `api-key`.
+        string header_name = 2;
+
+        // Determines the key metadata that will be included as headers on the upstream request.
+        // Each entry represents a header to add: the key is the name of the header, and the
+        // value is the key that will be used to look up the data entry in the key metadata.
+        map<string, string> headers_from_key_metadata = 3;
+    }
+
+    message OpaAuthConfig {
+        // An optional modules (filename, module content) maps containing modules assist in the resolution of `query`.
+        map<string, string> modules = 1;
+
+        // The query that determines the auth decision. The result of this query must be either a boolean
+        // or an array with boolean as the first element. A boolean `true` value means that the request
+        // will be authorized. Any other value, or error, means that the request will be denied.
+        string query = 2;
+    }
+
+    message Config {
+
+        reserved 1, 2;
+
+        // optional: used when defining complex boolean logic, if `boolean_expr` is defined below. Also used
+        // in logging. If omitted, an automatically generated name will be used (e.g. config_0, of the
+        // pattern 'config_$INDEX_IN_CHAIN'). In the case of plugin auth, this field is ignored in favor of
+        // the name assigned on the plugin config itself.
+        google.protobuf.StringValue name = 11;
+
+        oneof auth_config {
+            OAuth2Config oauth2 = 9;
+            BasicAuth basic_auth = 4;
+            ApiKeyAuthConfig api_key_auth = 5;
+            AuthPlugin plugin_auth = 6;
+            OpaAuthConfig opa_auth = 7;
+            Ldap ldap = 8;
+            // This is a "dummy" extauth service which can be used to support multiple auth mechanisms with JWT authentication.
+            // If Jwt authentication is to be used in the [boolean expression](https://docs.solo.io/gloo-edge/latest/reference/api/github.com/solo-io/gloo/projects/gloo/api/v1/enterprise/options/extauth/v1/extauth.proto.sk/#authconfig) in an AuthConfig, you can use this auth config type to include Jwt as an Auth config.
+            // In addition, `allow_missing_or_failed_jwt` must be set on the Virtual Host or Route that uses JWT auth or else the JWT filter will short circuit this behaviour.
+            google.protobuf.Empty jwt = 12;
+            PassThroughAuth pass_through_auth = 13;
+        }
+    }
+
+    // List of auth configs to be checked for requests on a route referencing this auth config,
+    // By default, every config must be authorized for the entire request to be authorized. This
+    // behavior can be changed by defining names for each config and defining `boolean_expr` below.
+    //
+    // State is shared between successful requests on the chain, i.e., the headers returned from each
+    // successful auth service get appended into the final auth response.
+    repeated Config configs = 8;
+
+    // How to handle processing of named configs within an auth config chain.
+    // An example config might be: `( basic1 || basic2 || (oidc1 && !oidc2) )`
+    // The boolean expression is evaluated left to right but honors parenthesis and short-circuiting.
+    google.protobuf.StringValue boolean_expr = 10;
+}
+
+message AuthPlugin {
+    // Name of the plugin
+    string name = 1;
+    // Name of the compiled plugin file. If not specified, Gloo Edge will look for an ".so" file with same name as the plugin.
+    string plugin_file_name = 2;
+    // Name of the exported symbol that implements the plugin interface in the plugin.
+    // If not specified, defaults to the name of the plugin
+    string exported_symbol_name = 3;
+
+    google.protobuf.Struct config = 4;
+}
+
+message BasicAuth {
+    string realm = 1;
+
+    message Apr {
+        message SaltedHashedPassword {
+            string salt = 1;
+            string hashed_password = 2;
+        }
+        map<string, SaltedHashedPassword> users = 2;
+    }
+    Apr apr = 2;
+}
+
+message RedisOptions {
+    // address of the redis. can be address:port or unix://path/to/unix.sock
+    string host = 1;
+    // db to use. can leave unset for db 0.
+    int32 db = 2;
+    // size of the connection pool. can leave unset for default.
+    // defaults to 10 connections per every CPU
+    int32 pool_size = 3;
+}
+
+message UserSession {
+    message InternalSession {
+    }
+    message RedisSession {
+        // Options to connect to redis
+        RedisOptions options = 1;
+        // Key prefix inside redis
+        string key_prefix = 2;
+        // Cookie name to set and store the session id. If empty the default "__session" is used.
+        string cookie_name = 3;
+        // When set, refresh expired id-tokens using the refresh-token. Defaults to true.
+        // Explicitly set to false to disable refreshing.
+        google.protobuf.BoolValue allow_refreshing = 4;
+    }
+
+    // should we fail auth flow when failing to get a session from redis, or allow it to continue,
+    // potentially starting a new auth flow and setting a new session.
+    bool fail_on_fetch_failure = 1;
+
+    message CookieOptions {
+        // Max age for the cookie. Leave unset for a default of 30 days (2592000 seconds).
+        // To disable cookie expiry, set explicitly to 0.
+        google.protobuf.UInt32Value max_age = 1;
+        // Use a non-secure cookie. Note - this should only be used for testing and in trusted
+        // environments.
+        bool not_secure = 2;
+        // Path of the cookie. If unset, defaults to "/". Set it explicitly to "" to avoid setting a
+        // path.
+        google.protobuf.StringValue path = 3;
+        // Cookie domain
+        string domain = 4;
+    }
+
+    // Set-Cookie options
+    CookieOptions cookie_options = 2;
+    oneof session {
+        // Set the tokens in the cookie itself. No need for server side state.
+        InternalSession cookie = 3;
+        // Use redis to store the tokens and just store a random id in the cookie.
+        RedisSession redis = 4;
+    }
+}
+
+message HeaderConfiguration {
+    // If set, the id token will be forward upstream using this header name.
+    string id_token_header = 1;
+    // If set, the access token will be forward upstream using this header name.
+    string access_token_header = 2;
+}
+
+
+// OIDC configuration is discovered at <issuerUrl>/.well-known/openid-configuration
+// The discovery override defines any properties that should override this discovery configuration
+// https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata
+message DiscoveryOverride {
+    // url of the provider authorization endpoint
+    string auth_endpoint = 1;
+
+    // url of the provider token endpoint
+    string token_endpoint = 2;
+
+    // url of the provider json web key set
+    string jwks_uri = 3;
+
+    // list of scope values that the provider supports
+    repeated string scopes = 4;
+
+    // list of response types that the provider supports
+    repeated string response_types = 5;
+
+    // list of subject identifier types that the provider supports
+    repeated string subjects = 6;
+
+    // list of json web signature signing algorithms that the provider supports for encoding claims in a jwt
+    repeated string id_token_algs = 7;
+
+    // list of client authentication methods supported by the provider token endpoint
+    repeated string auth_methods = 8;
+
+    // list of claim types that the provider supports
+    repeated string claims = 9;
+}
+
+// The json web key set (JWKS) (https://tools.ietf.org/html/rfc7517) is discovered at an interval
+// from a remote source. When keys rotate in the remote source, there may be a delay in the
+// local source picking up those new keys. Therefore, a user could execute a request with a token
+// that has been signed by a key in the remote JWKS, but the local cache doesn't have the key yet.
+// The request would fail because the key isn't contained in the local set. Since most IdPs publish key
+// keys in their remote JWKS before they are used, this is not an issue most of the time.
+// This policy lets you define the behavior for when a user has a token with a key
+// not yet in the local cache.
+message JwksOnDemandCacheRefreshPolicy {
+    oneof policy {
+        // Never refresh the local JWKS cache on demand. If a key is not in the cache, it is assumed to be malicious.
+        // This is the default policy since we assume that IdPs publish keys before they rotate them,
+        // and frequent polling finds the newest keys.
+        google.protobuf.Empty never = 1;
+
+        // If a key is not in the cache, fetch the most recent keys from the IdP and update the cache.
+        // NOTE: This should only be done in trusted environments, since missing keys will each trigger
+        // a request to the IdP. Using this in an environment exposed to the internet will allow malicious agents to
+        // execute a DDoS attack by spamming protected endpoints with tokens signed by invalid keys.
+        google.protobuf.Empty always = 2;
+
+        // If a key is not in the cache, fetch the most recent keys from the IdP and update the cache.
+        // This value sets the number of requests to the IdP per polling interval. If that limit is exceeded,
+        // we will stop fetching from the IdP for the remainder of the polling interval.
+        uint32 max_idp_req_per_polling_interval = 3;
+    }
+}
+
+// Authenticates and authorizes requests by querying an LDAP server. Gloo makes the following assumptions:
+//  * Requests provide credentials via the basic HTTP authentication header. Gloo will BIND to the LDAP server using the
+//    credentials extracted from the header.
+//  * Your LDAP server is configured so that each entry you want to authorize has an attribute that indicates its group
+//    memberships. A common way of achieving this is by using the [*memberof* overlay](http://www.openldap.org/software/man.cgi?query=slapo-memberof).
+message Ldap {
+
+    // Configuration properties for pooling connections to the LDAP server. If the pool is exhausted when a connection
+    // is requested (meaning that all the polled connections are in use), the connection will be created on the fly.
+    message ConnectionPool {
+        // Maximum number connections that are pooled at any give time. The default value is 5.
+        google.protobuf.UInt32Value maxSize = 1;
+        // Number of connections that the pool will be pre-populated with upon initialization. The default value is 2.
+        google.protobuf.UInt32Value initialSize = 2;
+    }
+
+    // Address of the LDAP server to query. Should be in the form ADDRESS:PORT, e.g. `ldap.default.svc.cluster.local:389`.
+    string address = 1;
+
+    // Template to build user entry distinguished names (DN). This must contains a single occurrence of the "%s" placeholder.
+    // When processing a request, Gloo will substitute the name of the user (extracted from the auth header) for the
+    // placeholder and issue a search request with the resulting DN as baseDN (and 'base' search scope).
+    // E.g. "uid=%s,ou=people,dc=solo,dc=io"
+    string userDnTemplate = 2;
+
+    // Case-insensitive name of the attribute that contains the names of the groups an entry is member of. Gloo will look
+    // for attributes with the given name to determine which groups the user entry belongs to. Defaults to 'memberOf' if not provided.
+    string membershipAttributeName = 3;
+
+    // In order for the request to be authenticated, the membership attribute (e.g. *memberOf*) on the user entry must
+    // contain at least of one of the group DNs specified via this option.
+    // E.g. []string{ "cn=managers,ou=groups,dc=solo,dc=io", "cn=developers,ou=groups,dc=solo,dc=io" }
+    repeated string allowedGroups = 4;
+
+    // Use this property to tune the pool of connections to the LDAP server that Gloo maintains.
+    ConnectionPool pool = 5;
+}
+
+// Authorizes requests by querying a custom extauth server.
+message PassThroughAuth {
+
+    oneof protocol {
+        PassThroughGrpc grpc = 1;
+    }
+
+    // Custom config to be passed per request to the passthrough auth service.
+    google.protobuf.Struct config = 4;
+
+}
+
+// Authorizes requests by querying a custom extauth grpc server
+// Assumes that the server implements the envoy external authorization spec:
+// https://github.com/envoyproxy/envoy/blob/ae1ed1fa74f096dabe8dd5b19fc70333621b0309/api/envoy/service/auth/v3/external_auth.proto#L29
+message PassThroughGrpc {
+
+    // Address of the auth server to query. Should be in the form ADDRESS:PORT, e.g. `default.svc.cluster.local:389`.
+    string address = 1;
+
+    // Timeout for the auth server to respond. Defaults to 5s
+    google.protobuf.Duration connection_timeout = 2;
+}
+
+// The current status of the `ExtAuthConfig`.
+message ExtAuthConfigStatus {
+
+    enum State {
+        PENDING = 0;
+        ACCEPTED = 1;
+        REJECTED = 2;
+    }
+
+    // The current state of the `ExtAuthConfig`.
+    State state = 1;
+
+    // A human-readable string explaining the status.
+    string message = 2;
+
+    // The observed generation of the resource.
+    // When this matches the metadata.generation of the resource, it indicates the status is up-to-date.
+    int64 observed_generation = 3;
+}
