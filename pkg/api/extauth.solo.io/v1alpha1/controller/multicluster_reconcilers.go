@@ -10,8 +10,7 @@ import (
 
 	extauth_solo_io_v1alpha1 "github.com/solo-io/solo-apis/pkg/api/extauth.solo.io/v1alpha1"
 
-
-"github.com/pkg/errors"
+	"github.com/pkg/errors"
 	"github.com/solo-io/skv2/pkg/ezkube"
 	"github.com/solo-io/skv2/pkg/multicluster"
 	mc_reconcile "github.com/solo-io/skv2/pkg/multicluster/reconcile"

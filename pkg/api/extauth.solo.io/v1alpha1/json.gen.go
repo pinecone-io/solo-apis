@@ -2,7 +2,7 @@
 
 // Generated json marshal and unmarshal functions
 
-package types
+package v1alpha1
 
 import (
 	bytes "bytes"

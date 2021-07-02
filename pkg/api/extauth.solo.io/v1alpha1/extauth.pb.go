@@ -4,7 +4,7 @@
 // 	protoc        v3.6.1
 // source: github.com/solo-io/solo-apis/api/v1alpha1/extauth.proto
 
-package types
+package v1alpha1
 
 import (
 	reflect "reflect"
