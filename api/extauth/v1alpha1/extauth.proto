@@ -1,7 +1,7 @@
 syntax = "proto3";
-package extauth.solo.io;
+package extauth.api.solo.io;
 
-option go_package = "github.com/solo-io/ext-auth-service/pkg/api/extauth.solo.io/v1alpha1/types";
+option go_package = "github.com/solo-io/solo-apis/pkg/api/extauth.solo.io/v1alpha1";
 
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
