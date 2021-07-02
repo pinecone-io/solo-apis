@@ -4,8 +4,9 @@
 package v1alpha1
 
 import (
-	. "github.com/solo-io/ext-auth-service/pkg/api/extauth.solo.io/v1alpha1/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	. "github.com/solo-io/solo-apis/pkg/api/extauth.solo.io/v1alpha1/types"
+
+metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 

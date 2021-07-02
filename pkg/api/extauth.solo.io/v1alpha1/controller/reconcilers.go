@@ -8,7 +8,7 @@ package controller
 import (
 	"context"
 
-	extauth_solo_io_v1alpha1 "github.com/solo-io/ext-auth-service/pkg/api/extauth.solo.io/v1alpha1"
+	extauth_solo_io_v1alpha1 "github.com/solo-io/solo-apis/pkg/api/extauth.solo.io/v1alpha1"
 
 	"github.com/pkg/errors"
 	"github.com/solo-io/skv2/pkg/ezkube"
