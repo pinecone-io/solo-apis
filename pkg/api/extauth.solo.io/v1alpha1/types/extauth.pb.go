@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.25.0
 // 	protoc        v3.6.1
-// source: github.com/solo-io/ext-auth-service/api/v1alpha1/extauth.proto
+// source: github.com/solo-io/solo-apis/api/v1alpha1/extauth.proto
 
 package types
 
