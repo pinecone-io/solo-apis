@@ -1,4 +1,4 @@
-module github.com/pinecone-io/solo-apis
+module github.com/solo-io/solo-apis
 
 go 1.16
 
